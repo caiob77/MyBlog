@@ -1,0 +1,10 @@
+---
+import ProjectCard from "@components/ProjectCard.astro";
+import { projectsConfig } from "../config";
+---
+
+<div class="project-highlights px-6 mb-6 mt-6 w-full">
+	{projectsConfig.items.map((project) => (
+		<ProjectCard project={project} />
+	))}
+</div>

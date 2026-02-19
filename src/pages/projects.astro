@@ -1,0 +1,47 @@
+---
+import ProjectCard from "@components/ProjectCard.astro";
+import I18nKey from "@i18n/i18nKey";
+import { i18n } from "@i18n/translation";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { projectsConfig } from "../config";
+---
+
+<MainGridLayout
+	title={i18n(I18nKey.projects)}
+	description="Coleção dos meus projetos open-source e ferramentas que construí."
+>
+	<div class="projects-intro mb-4">
+		<p>
+			Coleção dos meus projetos side open-source, junto com algumas coisas
+			legais que construí com colegas no trabalho. É uma mistura de projetos
+			por paixão e ferramentas práticas — algumas apenas para diversão, outras
+			para resolver problemas do mundo real.
+		</p>
+	</div>
+	<div class="card-base px-6 py-6 w-full max-h-[calc(100vh-16rem)] overflow-y-auto">
+		<div class="grid gap-4 w-full">
+			{projectsConfig.items.map((project) => (
+				<ProjectCard project={project} />
+			))}
+		</div>
+	</div>
+</MainGridLayout>
+
+<style>
+	.projects-intro {
+		background: var(--card-bg);
+		border: 1px solid var(--line-divider);
+		border-radius: var(--radius-large);
+		padding: 1.5rem 1.5rem;
+	}
+
+	.projects-intro p {
+		color: oklch(0.25 0.02 var(--hue));
+		margin: 0;
+		line-height: 1.6;
+	}
+
+	:root.dark .projects-intro p {
+		color: oklch(0.90 0.01 var(--hue));
+	}
+</style>

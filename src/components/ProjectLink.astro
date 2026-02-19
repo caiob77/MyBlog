@@ -1,0 +1,29 @@
+---
+// ProjectLink.astro
+const { href, title } = Astro.props;
+---
+
+
+<a href={href} class="project-link">
+  {title}
+</a>
+
+<style>
+.project-link {
+  display: block;
+  width: 100%;
+  background: linear-gradient(135deg, #36d1e6 0%, #cb30eb 100%);
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: white;
+  text-decoration: none;
+  font-size: 1.5rem;
+  transition: transform 0.2s, background 0.2s;
+  text-align: center;
+}
+
+.project-link:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #a9b3e6 0%, #dac8eb 100%);
+}
+</style>
