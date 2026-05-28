@@ -1,0 +1,329 @@
+---
+title: "Arquitetura Hexagonal: o que é, como funciona e quando usar"
+date: "2026-03-17"
+description: "Entenda o que é arquitetura hexagonal, como funcionam Ports and Adapters e veja um exemplo prático em TypeScript para aplicar no seu projeto."
+category: "Educacional"
+tags: ["Arquitetura de Software", "Clean Architecture", "Ports and Adapters", "Design de Sistemas"]
+draft: false
+---
+
+## Introdução
+
+Você já trabalhou em um projeto onde trocar o banco de dados parecia mexer em tudo ao mesmo tempo? Ou onde escrever um teste unitário exigia subir um servidor inteiro por causa do acoplamento com o framework?
+
+Esse é um problema clássico de **acoplamento excessivo** — quando a lógica de negócio fica entrelaçada com detalhes de infraestrutura como banco de dados, HTTP, filas de mensagem ou serviços externos.
+
+A **arquitetura hexagonal** surgiu justamente para resolver esse problema. Ela propõe uma separação clara entre o que é essencial (sua regra de negócio) e o que é detalhe (como você persiste dados, expõe uma API ou consome um serviço externo).
+
+---
+
+## O que é Arquitetura Hexagonal?
+
+A arquitetura hexagonal foi proposta por **Alistair Cockburn em 2005** e também é chamada de **Ports and Adapters** — nome que descreve com precisão a estrutura que ela define.
+
+A ideia central é simples: a aplicação deve ser capaz de funcionar da mesma forma independentemente de como ela é acionada (via HTTP, CLI, testes, filas) e independentemente de como ela acessa recursos externos (banco de dados, APIs de terceiros, sistemas de arquivo).
+
+Cockburn resumiu assim:
+
+> *"Allow an application to equally be driven by users, programs, automated test or batch scripts, and to be developed and tested in isolation from its eventual run-time devices and databases."*
+
+O nome "hexagonal" vem da representação visual que Cockburn usou: um hexágono no centro representando o núcleo da aplicação, com múltiplos lados conectando o mundo externo. O número de lados não tem significado especial — é apenas uma forma visual de mostrar que pode haver múltiplas entradas e saídas.
+
+---
+
+## Conceitos Principais
+
+### Domínio (o núcleo da aplicação)
+
+O **domínio** é o coração da arquitetura hexagonal. Ele contém toda a lógica de negócio — as regras que definem o que a aplicação faz, sem depender de nenhum detalhe técnico externo.
+
+Aqui vivem entidades, casos de uso, serviços de domínio e regras de validação. O domínio não sabe se os dados vêm de um banco PostgreSQL ou de um arquivo CSV. Ele simplesmente executa a lógica.
+
+**Princípio fundamental:** o domínio não depende de nada externo. Todo o resto depende do domínio.
+
+### Ports (as interfaces)
+
+**Ports** são contratos — interfaces que definem como o domínio se comunica com o mundo externo, em ambas as direções.
+
+Existem dois tipos:
+
+- **Primary Ports (Driving Ports):** definem como o mundo externo aciona a aplicação. Ex: interface de um caso de uso que uma controller HTTP chama.
+- **Secondary Ports (Driven Ports):** definem como a aplicação acessa recursos externos. Ex: interface de repositório que o domínio usa para persistir dados.
+
+### Adapters (as implementações concretas)
+
+**Adapters** são as implementações concretas dos ports. Eles fazem a "tradução" entre o mundo externo e o domínio.
+
+- **Primary Adapters:** implementam a entrada na aplicação. Ex: controllers HTTP, handlers de CLI, consumidores de fila.
+- **Secondary Adapters:** implementam o acesso a recursos externos. Ex: repositório PostgreSQL, cliente de API REST, repositório em memória para testes.
+
+---
+
+## Diagrama da Estrutura
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    MUNDO EXTERNO                        │
+│                                                         │
+│  [HTTP Controller]  [CLI Handler]  [Message Consumer]  │
+│         │                │                │             │
+│    (Primary Adapter) (Primary Adapter) (Primary Adapter)│
+└─────────────────────┬───────────────────────────────────┘
+                      │ Primary Port (interface do caso de uso)
+          ┌───────────▼───────────┐
+          │                       │
+          │       DOMÍNIO         │
+          │   (Lógica de negócio) │
+          │                       │
+          └───────────┬───────────┘
+                      │ Secondary Port (interface de repositório)
+┌─────────────────────┴───────────────────────────────────┐
+│                                                         │
+│  [PostgreSQL Repo]  [API Client]  [InMemory Repo]       │
+│  (Secondary Adapter)(Secondary Adapter)(Secondary Adapter│
+│                                                         │
+│                    INFRAESTRUTURA                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+A seta de dependência sempre aponta para dentro: adapters dependem dos ports, ports pertencem ao domínio.
+
+---
+
+## Exemplo Prático em TypeScript
+
+Vamos implementar um caso de uso simples: **criar um usuário**.
+
+### 1. Entidade de Domínio
+
+```typescript
+// src/domain/entities/User.ts
+export class User {
+  constructor(
+    public readonly id: string,
+    public readonly name: string,
+    public readonly email: string,
+    public readonly createdAt: Date
+  ) {}
+
+  // Regra de negócio: email deve ser válido
+  static isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+}
+```
+
+### 2. Secondary Port (interface do repositório)
+
+```typescript
+// src/domain/ports/UserRepository.ts
+
+// Este é um contrato — o domínio define o que precisa,
+// sem saber quem vai implementar
+export interface UserRepository {
+  findByEmail(email: string): Promise<User | null>;
+  save(user: User): Promise<void>;
+}
+```
+
+### 3. Primary Port + Caso de Uso
+
+```typescript
+// src/domain/usecases/CreateUserUseCase.ts
+import { User } from "../entities/User";
+import { UserRepository } from "../ports/UserRepository";
+import { randomUUID } from "crypto";
+
+// Input/Output tipados: o domínio define o contrato de entrada
+export interface CreateUserInput {
+  name: string;
+  email: string;
+}
+
+export class CreateUserUseCase {
+  // Recebe o repositório via injeção de dependência
+  constructor(private readonly userRepository: UserRepository) {}
+
+  async execute(input: CreateUserInput): Promise<User> {
+    // Validação de negócio — não depende de framework
+    if (!User.isValidEmail(input.email)) {
+      throw new Error("E-mail inválido.");
+    }
+
+    const existing = await this.userRepository.findByEmail(input.email);
+    if (existing) {
+      throw new Error("Já existe um usuário com este e-mail.");
+    }
+
+    const user = new User(
+      randomUUID(),
+      input.name,
+      input.email,
+      new Date()
+    );
+
+    await this.userRepository.save(user);
+    return user;
+  }
+}
+```
+
+### 4. Secondary Adapter (repositório concreto)
+
+```typescript
+// src/infra/repositories/PrismaUserRepository.ts
+import { PrismaClient } from "@prisma/client";
+import { User } from "../../domain/entities/User";
+import { UserRepository } from "../../domain/ports/UserRepository";
+
+// Implementação concreta: sabe tudo sobre Prisma e PostgreSQL
+export class PrismaUserRepository implements UserRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async findByEmail(email: string): Promise<User | null> {
+    const record = await this.prisma.user.findUnique({ where: { email } });
+    if (!record) return null;
+    return new User(record.id, record.name, record.email, record.createdAt);
+  }
+
+  async save(user: User): Promise<void> {
+    await this.prisma.user.create({
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    });
+  }
+}
+```
+
+### 5. Primary Adapter (controller HTTP com Express)
+
+```typescript
+// src/infra/http/controllers/CreateUserController.ts
+import { Request, Response } from "express";
+import { CreateUserUseCase } from "../../../domain/usecases/CreateUserUseCase";
+
+export class CreateUserController {
+  constructor(private readonly createUser: CreateUserUseCase) {}
+
+  async handle(req: Request, res: Response): Promise<void> {
+    try {
+      const { name, email } = req.body;
+      const user = await this.createUser.execute({ name, email });
+
+      // O controller traduz o resultado do domínio para HTTP
+      res.status(201).json({ id: user.id, name: user.name, email: user.email });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  }
+}
+```
+
+### 6. Testando o domínio em isolamento
+
+Uma das maiores vantagens: **testar sem banco de dados**.
+
+```typescript
+// src/domain/usecases/CreateUserUseCase.test.ts
+import { CreateUserUseCase } from "./CreateUserUseCase";
+import { UserRepository } from "../ports/UserRepository";
+import { User } from "../entities/User";
+
+// Repositório em memória — zero infraestrutura no teste
+class InMemoryUserRepository implements UserRepository {
+  private users: User[] = [];
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.users.find((u) => u.email === email) ?? null;
+  }
+
+  async save(user: User): Promise<void> {
+    this.users.push(user);
+  }
+}
+
+describe("CreateUserUseCase", () => {
+  it("deve criar um usuário com dados válidos", async () => {
+    const repo = new InMemoryUserRepository();
+    const useCase = new CreateUserUseCase(repo);
+
+    const user = await useCase.execute({ name: "Caio", email: "caio@email.com" });
+
+    expect(user.name).toBe("Caio");
+    expect(user.email).toBe("caio@email.com");
+  });
+
+  it("deve lançar erro para e-mail duplicado", async () => {
+    const repo = new InMemoryUserRepository();
+    const useCase = new CreateUserUseCase(repo);
+
+    await useCase.execute({ name: "Caio", email: "caio@email.com" });
+
+    await expect(
+      useCase.execute({ name: "Outro", email: "caio@email.com" })
+    ).rejects.toThrow("Já existe um usuário com este e-mail.");
+  });
+});
+```
+
+---
+
+## Vantagens e Desvantagens
+
+### Vantagens
+
+- **Testabilidade:** o domínio pode ser testado de forma completamente isolada, sem banco de dados, sem HTTP, sem dependências externas.
+- **Substituibilidade:** trocar o banco de dados significa criar um novo adapter — o domínio não muda.
+- **Clareza de responsabilidades:** cada camada tem um papel bem definido.
+- **Evolução independente:** a lógica de negócio pode evoluir sem impactar a infraestrutura e vice-versa.
+
+### Desvantagens
+
+- **Mais arquivos e boilerplate:** para funcionalidades simples, a estrutura pode parecer excessiva.
+- **Curva de aprendizado:** quem não está familiarizado com injeção de dependência e inversão de controle pode ter dificuldade no início.
+- **Risco de over-engineering:** em projetos pequenos, toda essa separação pode gerar complexidade desnecessária.
+- **Mapeamento de dados:** é comum precisar mapear entre entidades de domínio e modelos de banco de dados, o que adiciona código de tradução.
+
+---
+
+## Quando Usar (e Quando Não Usar)
+
+### Use arquitetura hexagonal quando:
+
+- A **lógica de negócio é complexa** e precisa ser testada de forma isolada.
+- O projeto tem **múltiplas interfaces de entrada** (API REST, GraphQL, CLI, filas).
+- Existe a possibilidade real de **trocar tecnologias de infraestrutura** (ex: migrar de MySQL para PostgreSQL, de REST para gRPC).
+- O projeto deve ter **longevidade** e passará por várias iterações.
+- A equipe já tem familiaridade com **injeção de dependência** e princípios SOLID.
+
+### Não use quando:
+
+- O projeto é uma **aplicação pequena ou CRUD simples** — o overhead não se justifica.
+- Você está construindo um **protótipo ou MVP** com prazo curto — simplicidade vale mais.
+- A equipe ainda está aprendendo fundamentos de programação — adicionar essa camada de abstração pode atrapalhar mais do que ajudar.
+- O projeto tem **ciclo de vida curto** e baixa probabilidade de manutenção.
+
+---
+
+## Conclusão
+
+A **arquitetura hexagonal** é uma das abordagens mais poderosas para organizar sistemas que precisam crescer com qualidade. Ao separar claramente o domínio da infraestrutura por meio de Ports and Adapters, você ganha testabilidade, flexibilidade e clareza — sem depender de um framework específico para validar suas regras de negócio.
+
+O exemplo em TypeScript que vimos aqui mostra isso na prática: o caso de uso `CreateUserUseCase` não sabe se os dados vêm do Prisma, de um banco em memória ou de qualquer outro lugar. Isso é a essência da arquitetura hexagonal funcionando.
+
+Se você está começando, não precisa aplicar tudo de uma vez. Comece pela separação entre domínio e infraestrutura em um módulo, escreva um teste isolado e sinta a diferença. Depois expanda gradualmente.
+
+**Próximo passo:** experimente refatorar um caso de uso existente no seu projeto para usar um repositório com interface definida pelo domínio. O impacto nos testes vai te convencer.
+
+---
+
+## Referências
+
+- [Alistair Cockburn — Hexagonal Architecture (2005)](https://alistair.cockburn.us/hexagonal-architecture/)
+- [Martin Fowler — Patterns of Enterprise Application Architecture](https://martinfowler.com/books/eaa.html)
+- [Robert C. Martin — Clean Architecture (2017)](https://www.oreilly.com/library/view/clean-architecture-a/9780134494272/)
+- [Vaughn Vernon — Implementing Domain-Driven Design](https://vaughnvernon.com/)
